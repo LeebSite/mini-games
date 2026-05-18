@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Time Glitch</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    body {
+      background: radial-gradient(circle at top, #151525, #05050a);
+      overflow: hidden;
+      color: white;
+      height: 100vh;
+    }
+
+    canvas {
+      position: absolute;
+      inset: 0;
+    }
+
+    .hud {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.08);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.15);
+      padding: 12px 18px;
+      border-radius: 14px;
+      min-width: 120px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.4);
+    }
+
+    .card h3 {
+      font-size: 13px;
+      color: #9ecfff;
+      margin-bottom: 4px;
+    }
+
+    .card p {
+      font-size: 24px;
+      font-weight: bold;
+    }
+
+    .centerMessage {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      z-index: 15;
+      background: rgba(0,0,0,0.6);
+      padding: 30px;
+      border-radius: 20px;
+      width: 90%;
+      max-width: 600px;
+      border: 1px solid rgba(255,255,255,0.15);
+      backdrop-filter: blur(10px);
+    }
+
+    .centerMessage h1 {
+      font-size: 48px;
+      margin-bottom: 10px;
+      background: linear-gradient(90deg, #5de0ff, #9d7bff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .centerMessage p {
+      line-height: 1.7;
+      margin-bottom: 20px;
+      color: #d9d9d9;
+    }
+
+    button {
+      padding: 14px 24px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #45c7ff, #7a5cff);
+      color: white;
+      cursor: pointer;
+      font-size: 16px;
+      transition: 0.2s;
+      font-weight: bold;
+    }
+
+    button:hover {
+      transform: scale(1.05);
+    }
+
+    .footer {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      background: rgba(255,255,255,0.08);
+      padding: 10px 18px;
+      border-radius: 999px;
+      font-size: 14px;
+      color: #d9d9d9;
+    }
+
+    .gameOver {
+      display: none;
+    }
+
+    @media(max-width: 700px) {
+      .centerMessage h1 {
+        font-size: 34px;
+      }
+
+      .card p {
+        font-size: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <div class="hud">
+    <div class="card">
+      <h3>Score</h3>
+      <p id="score">0</p>
+    </div>
+
+    <div class="card">
+      <h3>Time Energy</h3>
+      <p id="energy">100</p>
+    </div>
+
+    <div class="card">
+      <h3>Glitches</h3>
+      <p id="glitches">0</p>
+    </div>
+  </div>
+
+  <div class="centerMessage" id="startScreen">
+    <h1>TIME GLITCH</h1>
+    <p>
+      Kamu adalah penjaga dimensi waktu.
+      Tangkap orb biru untuk menstabilkan waktu.
+      Hindari orb merah yang membuat realitas glitch.
+      
+      Tapi hati-hati...
+      semakin tinggi score kamu, dunia akan mulai rusak:
+      layar bergetar, waktu melambat, objek teleport.
+    </p>
+
+    <button id="startBtn">Mulai Game</button>
+  </div>
+
+  <div class="centerMessage gameOver" id="gameOverScreen">
+    <h1>TIME COLLAPSED</h1>
+    <p id="finalScore"></p>
+    <button onclick="restartGame()">Main Lagi</button>
+  </div>
+
+  <div class="footer">
+    WASD / Arrow Keys untuk bergerak
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    let gameStarted = false;
+    let animationId;
+
+    const player = {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      size: 20,
+      speed: 5,
+      color: '#5de0ff'
+    };
+
+    let keys = {};
+    let score = 0;
+    let energy = 100;
+    let glitches = 0;
+    let particles = [];
+    let enemies = [];
+    let collectibles = [];
+    let shakeIntensity = 0;
+
+    document.addEventListener('keydown', e => {
+      keys[e.key.toLowerCase()] = true;
+    });
+
+    document.addEventListener('keyup', e => {
+      keys[e.key.toLowerCase()] = false;
+    });
+
+    function spawnCollectible() {
+      collectibles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        radius: 10 + Math.random() * 10,
+        pulse: Math.random() * Math.PI * 2
+      });
+    }
+
+    function spawnEnemy() {
+      enemies.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        radius: 15,
+        speed: 1 + Math.random() * 2
+      });
+    }
+
+    for(let i = 0; i < 5; i++) spawnCollectible();
+    for(let i = 0; i < 3; i++) spawnEnemy();
+
+    function updatePlayer() {
+      if(keys['w'] || keys['arrowup']) player.y -= player.speed;
+      if(keys['s'] || keys['arrowdown']) player.y += player.speed;
+      if(keys['a'] || keys['arrowleft']) player.x -= player.speed;
+      if(keys['d'] || keys['arrowright']) player.x += player.speed;
+
+      player.x = Math.max(player.size, Math.min(canvas.width - player.size, player.x));
+      player.y = Math.max(player.size, Math.min(canvas.height - player.size, player.y));
+    }
+
+    function drawPlayer() {
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+      ctx.fillStyle = player.color;
+      ctx.shadowColor = '#5de0ff';
+      ctx.shadowBlur = 20;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    function drawCollectibles() {
+      collectibles.forEach((item, index) => {
+        item.pulse += 0.05;
+
+        const radius = item.radius + Math.sin(item.pulse) * 3;
+
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#7eff8a';
+        ctx.shadowColor = '#7eff8a';
+        ctx.shadowBlur = 15;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        const dist = Math.hypot(player.x - item.x, player.y - item.y);
+
+        if(dist < player.size + radius) {
+          score += 10;
+          energy = Math.min(100, energy + 5);
+          collectibles.splice(index, 1);
+          spawnCollectible();
+
+          for(let i = 0; i < 15; i++) {
+            particles.push({
+              x: item.x,
+              y: item.y,
+              dx: (Math.random() - 0.5) * 5,
+              dy: (Math.random() - 0.5) * 5,
+              life: 40
+            });
+          }
+        }
+      });
+    }
+
+    function drawEnemies() {
+      enemies.forEach(enemy => {
+        const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+
+        enemy.x += Math.cos(angle) * enemy.speed;
+        enemy.y += Math.sin(angle) * enemy.speed;
+
+        if(score > 100 && Math.random() < 0.01) {
+          enemy.x = Math.random() * canvas.width;
+          enemy.y = Math.random() * canvas.height;
+        }
+
+        ctx.beginPath();
+        ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff4f7a';
+        ctx.shadowColor = '#ff4f7a';
+        ctx.shadowBlur = 20;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        const dist = Math.hypot(player.x - enemy.x, player.y - enemy.y);
+
+        if(dist < player.size + enemy.radius) {
+          energy -= 0.4;
+          glitches += 1;
+          shakeIntensity = 10;
+        }
+      });
+    }
+
+    function drawParticles() {
+      particles.forEach((p, index) => {
+        p.x += p.dx;
+        p.y += p.dy;
+        p.life--;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+
+        if(p.life <= 0) particles.splice(index, 1);
+      });
+    }
+
+    function glitchEffects() {
+      if(glitches > 30) {
+        ctx.fillStyle = 'rgba(255,0,100,0.05)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      if(glitches > 60 && Math.random() < 0.02) {
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.fillRect(
+          Math.random() * canvas.width,
+          Math.random() * canvas.height,
+          Math.random() * 300,
+          10
+        );
+      }
+    }
+
+    function screenShake() {
+      if(shakeIntensity > 0) {
+        const dx = (Math.random() - 0.5) * shakeIntensity;
+        const dy = (Math.random() - 0.5) * shakeIntensity;
+        ctx.translate(dx, dy);
+        shakeIntensity *= 0.9;
+      }
+    }
+
+    function updateHUD() {
+      document.getElementById('score').textContent = score;
+      document.getElementById('energy').textContent = Math.floor(energy);
+      document.getElementById('glitches').textContent = glitches;
+    }
+
+    function gameLoop() {
+      animationId = requestAnimationFrame(gameLoop);
+
+      ctx.save();
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      screenShake();
+
+      updatePlayer();
+      drawCollectibles();
+      drawEnemies();
+      drawParticles();
+      drawPlayer();
+      glitchEffects();
+
+      ctx.restore();
+
+      updateHUD();
+
+      energy -= 0.03;
+
+      if(score > 150) {
+        player.speed = 6;
+      }
+
+      if(score > 300 && enemies.length < 6) {
+        spawnEnemy();
+      }
+
+      if(energy <= 0) {
+        gameOver();
+      }
+    }
+
+    function gameOver() {
+      cancelAnimationFrame(animationId);
+
+      document.getElementById('gameOverScreen').style.display = 'block';
+      document.getElementById('finalScore').innerHTML = `
+        Skor akhir kamu: <strong>${score}</strong><br><br>
+        Dunia mengalami ${glitches} glitch sebelum runtuh.
+      `;
+    }
+
+    document.getElementById('startBtn').addEventListener('click', () => {
+      document.getElementById('startScreen').style.display = 'none';
+      gameStarted = true;
+      gameLoop();
+    });
+
+    function restartGame() {
+      location.reload();
+    }
+
+    window.addEventListener('resize', () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+  </script>
+</body>
+</html>
